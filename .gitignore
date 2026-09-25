@@ -1,0 +1,19 @@
+# Code only. Data, results, keys, and manuscripts are never committed.
+.env*
+*.env
+.venv/
+__pycache__/
+*.pyc
+results/
+figures/
+manuscript/
+validation/
+data/
+logs*.txt
+*.xlsx
+*.csv
+*.jsonl
+*.json
+*.docx
+*.pdf
+.DS_Store
