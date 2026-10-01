@@ -13,14 +13,14 @@ maternal-context cause mention, so the two must appear in the same provision.
 Reported alongside the loose measure so the difference is visible.
 """
 from __future__ import annotations
-import bisect, csv, json, re, sys, collections
+import bisect, csv, json, os, re, sys, collections
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import importlib.util
 spec = importlib.util.spec_from_file_location("chain", Path(__file__).parent / "04_accountability_chain.py")
 chain = importlib.util.module_from_spec(spec); spec.loader.exec_module(chain)
 
-WINDOW = 1000   # same provision, roughly a page
+WINDOW = int(os.environ.get("MMRC_WH_WINDOW", 1000))   # same provision, roughly a page
 OUT = Path(__file__).resolve().parent.parent / "results"
 
 

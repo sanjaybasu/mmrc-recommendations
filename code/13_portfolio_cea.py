@@ -138,6 +138,14 @@ class Model:
 
         prog = self.cost(cov)
         offset = smm_averted * self.P["cost_smm_increment"]["value"]
+        dd = sum(self.base["death"][cz] - r["death"][cz] for cz in ms.CAUSES)
+        blk = self.c.black
+        by_race = {"black_per_100k": float(dd[blk].sum() / max(blk.sum(), 1) * 1e5),
+                   "other_per_100k": float(dd[~blk].sum() / max((~blk).sum(), 1) * 1e5),
+                   "baseline_black_prmr": float(sum(self.base["death"][cz] for cz in ms.CAUSES)[blk].sum()
+                                                / max(blk.sum(), 1) * 1e5),
+                   "baseline_other_prmr": float(sum(self.base["death"][cz] for cz in ms.CAUSES)[~blk].sum()
+                                                / max((~blk).sum(), 1) * 1e5)}
         return {"coverage": {k: round(v, 4) for k, v in cov.items() if v > 0},
                 "program_cost": prog, "cost_offset_smm": offset,
                 "net_cost": prog - offset,
@@ -148,7 +156,7 @@ class Model:
                 "cost_per_qaly": (prog - offset) / qaly if qaly > 0 else float("inf"),
                 "cost_per_death_averted": (prog - offset) / deaths_averted
                 if deaths_averted > 0 else float("inf"),
-                "deaths_by_cause": t["deaths_by_cause"]}
+                "deaths_by_cause": t["deaths_by_cause"], "by_race": by_race}
 
     # ---- portfolios ----------------------------------------------------------
     def observed(self, lever_share: dict, intensity: float = 1.0) -> dict:
@@ -169,6 +177,17 @@ class Model:
         top = max(int_share.values())
         return {k: min(i.max_reach, intensity * int_share.get(k, 0.0) / top * i.max_reach)
                 for k, i in self.ints.items()}
+
+    def requested_with_components(self, int_share: dict) -> dict:
+        """Every named intervention at full reach, with a named hemorrhage bundle
+        read as including tranexamic acid, which the bundle's implementation
+        guidance lists as an adjunctive agent. Ergometrine-class prophylaxis is
+        not a bundle element (the guidance names oxytocin first line and
+        methylergonovine or carboprost as second-line treatment) and is not added."""
+        cov = self.requested_full(int_share)
+        if int_share.get("hemorrhage_bundle", 0) > 0:
+            cov["tranexamic_acid"] = self.ints["tranexamic_acid"].max_reach
+        return cov
 
     def requested_full(self, int_share: dict, exclude: tuple = ()) -> dict:
         """Primary requested portfolio: every intervention requested by at least
@@ -375,6 +394,7 @@ def main() -> None:
         "requested_excluding_home_visiting": m.outcomes(
             m.requested_full(ishares, exclude=("nurse_home_visiting",))),
         "observed_lever_based": m.outcomes(m.observed(shares)),
+        "requested_with_bundle_components": m.outcomes(m.requested_with_components(ishares)),
     }
     # Incremental over current practice
     cur = json.load(open(RES / "current_practice.json"))["coverage"]
@@ -382,6 +402,8 @@ def main() -> None:
     oc = mc.outcomes(mc.requested_full(ishares))
     res["observed_incremental_current_practice"] = oc
     res["evidence_weighted_incremental_current_practice"] = mc.outcomes(mc.greedy(oc["program_cost"]))
+    res["requested_with_bundle_components_incremental_current_practice"] = mc.outcomes(
+        mc.requested_with_components(ishares))
     front = m.frontier(budget)
     equiv = m.equivalent_budget(obs["deaths_averted"], budget)
 

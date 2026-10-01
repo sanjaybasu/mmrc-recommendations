@@ -99,11 +99,11 @@ def _registry(P: dict) -> list[Intervention]:
             "uterotonics", "Preferred uterotonic regimen for hemorrhage prevention",
             "Clinical protocol or bundle", ("Hemorrhage",), "incidence",
             0.76, 0.64, 0.90, "demonstrated benefit",
-            1.50, 0.95, False, ALL_ELIGIBLE,
+            1.50, 0.95, False, lambda c: ~c.chronic_htn,
             "Gallos I, et al. Cochrane Database Syst Rev. 2025;CD011689.pub4. Network "
             "meta-analysis, 122 trials, 121,931 women; ergometrine plus oxytocin versus "
             "oxytocin for blood loss of 500 mL or more.",
-            "Incremental drug cost over oxytocin alone."),
+            "Incremental drug cost over oxytocin alone. Ergometrine-class agents are contraindicated with hypertension, so people with chronic hypertension are ineligible."),
         Intervention(
             "tranexamic_acid", "Early tranexamic acid for hemorrhage treatment",
             "Clinical protocol or bundle", ("Hemorrhage",), "cfr",

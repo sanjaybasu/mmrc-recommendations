@@ -133,14 +133,15 @@ def main() -> None:
     if (RES / "uncertainty.json").exists():
         u = load("uncertainty.json")
         add("psa.draws", f'{u["psa"]["n_draws"]:,}', "uncertainty.json")
-        for k in ["obs_deaths", "ev_deaths", "wl_deaths", "ba_deaths", "freq_deaths", "gap",
+        for k in ["obs_deaths", "ev_deaths", "wl_deaths", "ba_deaths", "freq_deaths", "comp_deaths", "gap",
                   "ratio", "obs_cost", "ev_cost", "obs_qaly", "ev_qaly"]:
             if k not in u["psa"]:
                 continue
             s = u["psa"][k]
             d = 1 if k == "ratio" else 0
             add(f"psa.{k}.median", f'{s["median"]:,.{d}f}', "uncertainty.json")
-            add(f"psa.{k}.ci", f'{s["ci"][0]:,.{d}f} to {s["ci"][1]:,.{d}f}', "uncertainty.json")
+            lo_, hi_ = [0.0 if abs(x) < 0.5 * 10 ** (-d) else x for x in s["ci"]]
+            add(f"psa.{k}.ci", f'{lo_:,.{d}f} to {hi_:,.{d}f}', "uncertainty.json")
         if "prob_evidence_weighted_averts_at_least_2x" in u["psa"]:
             add("psa.prob_2x", f'{100*u["psa"]["prob_evidence_weighted_averts_at_least_2x"]:.1f}',
                 "uncertainty.json")
@@ -243,6 +244,10 @@ def main() -> None:
     add("adj.second", str(adj["chose_second"]), "adjudication_summary.json")
     add("adj.neither", str(adj["chose_neither"]), "adjudication_summary.json")
     add("adj.changed", str(adj["labels_changed_from_primary"]), "adjudication_summary.json")
+    rc = [x for x in adj["changes"] if x[0] == "1 Priority"]
+    add("adj.rec_changes", str(len(rc)), "adjudication_summary.json")
+    add("adj.to_none", str(sum(1 for x in rc if x[2] == "Specific intervention requested" and x[4] == "none")),
+        "adjudication_summary.json")
     tiers = load("adjudication_tiers.json")
     add("adj.priority_recs", str(tiers["priority_recommendations"]), "adjudication_tiers.json")
     add("adj.cause_labels", str(tiers["cause_label_items"]), "adjudication_tiers.json")
@@ -266,6 +271,44 @@ def main() -> None:
                                if not r["sheet"].endswith("Cause labels")})
     add("val.agree_pool.n", f"{n_agree_pool:,}", "adjudication_key.csv")
     add("val.agree_pool.pct", f1(100 * n_agree_pool / n_recs), "adjudication_key.csv")
+
+    if (RES / "uncertainty_current.json").exists():
+        uc = load("uncertainty_current.json")["psa"]
+        for k in ("obs_deaths", "ev_deaths", "comp_deaths", "obs_qaly", "ev_qaly"):
+            if k in uc:
+                lo_, hi_ = [0.0 if abs(x) < 0.5 else x for x in uc[k]["ci"]]
+                add(f"psacur.{k}.ci", f'{lo_:,.0f} to {hi_:,.0f}', "uncertainty_current.json")
+                add(f"psacur.{k}.median", f'{uc[k]["median"]:,.0f}', "uncertainty_current.json")
+        add("psacur.prob_better", f'{100*uc["prob_evidence_weighted_averts_more"]:.1f}', "uncertainty_current.json")
+        for w, v in (uc.get("ceac") or {}).items():
+            for kk, vv in v.items():
+                add(f"psacur.ceac.{int(w)//1000}k.{kk}", f"{100*vv:.1f}", "uncertainty_current.json")
+
+    # accuracy statistics, test-retest, keyword audit
+    vst = load("validation_stats.json")
+    pct3 = lambda x: f"{100*x:.1f}"
+    for d, v in vst["diagnostic"].items():
+        for m_ in ("sensitivity", "specificity", "ppv", "npv"):
+            k_, n_, ci_ = v[m_]
+            if n_:
+                add(f"acc.{d}.{m_}", f"{k_} of {n_}", "validation_stats.json")
+                add(f"acc.{d}.{m_}.pct", pct3(k_ / n_), "validation_stats.json")
+                add(f"acc.{d}.{m_}.ci", f"{pct3(ci_[0])} to {pct3(ci_[1])}", "validation_stats.json")
+    for f, v in vst["kappa_ci"].items():
+        if isinstance(v, dict):
+            add(f"kci.{f}", f"{v['ci'][0]:.2f} to {v['ci'][1]:.2f}", "validation_stats.json")
+        else:
+            add(f"kci.{f}", f"{v[0]:.2f} to {v[1]:.2f}", "validation_stats.json")
+    for d, v in vst["bounds"].items():
+        add(f"bound.{d}.lower_pct", f"{v['lower_pct']:.1f}", "validation_stats.json")
+        add(f"bound.{d}.upper_pct", f"{v['upper_pct']:.1f}", "validation_stats.json")
+        add(f"bound.{d}.unadjudicated", str(v["unadjudicated"]), "validation_stats.json")
+    for k_, v in vst["keyword_audit"].items():
+        add(f"kw.{k_}.mentions", str(v["mentions"]), "validation_stats.json")
+    rt = load("retest_scores.json")
+    add("retest.n", str(rt["n"]), "retest_scores.json")
+    for f, v in rt["fields"].items():
+        add(f"retest.{f}.kappa", f"{v['kappa']:.2f}", "retest_scores.json")
 
     # coverage recommendations
     lab = [json.loads(l) for l in open(RES / "llm_labels_passA.jsonl")]
@@ -298,7 +341,8 @@ def main() -> None:
                  "silence_medicaid_member_subset": "silence_medicaid",
                  "silence_recs_causes": "silence_rc",
                  "silence_sensitivity_crosscutting": "silence_sens",
-                 "silence_pages_recs": "silence_pr"}.get(mname, mname)
+                 "silence_pages_recs": "silence_pr",
+                 "silence_intermediate_rule": "silence_mid"}.get(mname, mname)
         for t, v in m["terms"].items():
             if t in tname:
                 d = 2
@@ -328,6 +372,10 @@ def main() -> None:
                "Injury and violence": "injury", "Other medical conditions": "other"}[g]
         add(f"silence_sens.{key}.pct", f1(v["pct"]), "alignment_moderators.json")
         add(f"silence_sens.{key}.n", f"{v['silent']} of {v['pairs']}", "alignment_moderators.json")
+    for g, v in mo.get("silence_mid_by_group_raw", {}).items():
+        key = {"Obstetric and cardiovascular": "obcv", "Behavioral health": "bh",
+               "Injury and violence": "injury", "Other medical conditions": "other"}[g]
+        add(f"silence_mid.{key}.pct", f1(v["pct"]), "alignment_moderators.json")
     add("mod.few_specific_pairs", str(mo["pairs_with_fewer_than_5_specific_recs"]), "alignment_moderators.json")
     add("mod.few_specific_states", str(mo["states_with_fewer_than_5_specific_recs"]), "alignment_moderators.json")
     strict = {"Legislature or statute", "Medicaid or state health agency", "Managed care organization or payer"}
@@ -365,6 +413,8 @@ def main() -> None:
             add(f"prop.{sk}.diff_ci", ci(o["ci"][0], o["ci"][1], 1, 100), "propagation.json")
         fe = v.get("fixed_effects") or {}
         if "difference" in fe:
+            add(f"prop.{sk}.mdd", f"{100 * fe['mdd']:.0f}", "propagation.json")
+            add(f"prop.{sk}.ident_states", str(fe["identifying_states"]), "propagation.json")
             add(f"prop.{sk}.fe", f1(100 * fe["difference"]), "propagation.json")
             add(f"prop.{sk}.fe_ci", ci(fe["ci"][0], fe["ci"][1], 1, 100), "propagation.json")
         if a.get("mh_risk_difference") is not None:
@@ -388,6 +438,36 @@ def main() -> None:
     pq = json.load(open(RES / "channel_pqc_aim.json"))["states"]
     ini = [i for v in pq.values() for i in ((v.get("pqc") or {}).get("initiatives") or [])]
     add("pqc.n_initiatives", f"{len(ini):,}", "channel_pqc_aim.json")
+
+    # accuracy of the contract text rules (investigator review, script 38)
+    cv = load("contract_validation_scores.json")
+    for sheet, tag in (("Cause mentions", "cause"), ("Payment provisions", "pay")):
+        r = cv["rules"][sheet]
+        for stat in ("ppv", "npv", "ppv_narrow_window"):
+            x = r[stat]; short = {"ppv": "ppv", "npv": "npv", "ppv_narrow_window": "ppv_narrow"}[stat]
+            add(f"cval.{tag}.{short}.k", str(x["k"]), "contract_validation_scores.json")
+            add(f"cval.{tag}.{short}.n", str(x["n"]), "contract_validation_scores.json")
+            add(f"cval.{tag}.{short}.pct", f1(100 * x["value"]), "contract_validation_scores.json")
+            add(f"cval.{tag}.{short}.ci", ci(x["ci"][0], x["ci"][1], 1, 100), "contract_validation_scores.json")
+        add(f"cval.{tag}.narrow_chars", f'{r["narrow_window_chars"]:,}', "contract_validation_scores.json")
+        add(f"cval.{tag}.n_states", str(r["n_states"]), "contract_validation_scores.json")
+    add("cval.n_passages", str(sum(v["n_flagged"] + v["n_not_flagged"] for v in cv["rules"].values())),
+        "contract_validation_scores.json")
+
+    # window-width sensitivity of the contract channels (script 19 rerun with other windows)
+    fes = {}
+    for tag in ("_ctx150", "_ctx600", "_wh500", "_wh2000"):
+        w = load(f"propagation{tag}.json")
+        for ch, sk in (("contract_all_documents", "contract_all"), ("withhold_all_documents", "withhold_all")):
+            fe = w["channels"][ch].get("fixed_effects") or {}
+            if "difference" in fe:
+                t = tag.strip("_")
+                add(f"win.{t}.{sk}.fe", f1(100 * fe["difference"]), f"propagation{tag}.json")
+                add(f"win.{t}.{sk}.fe_ci", ci(fe["ci"][0], fe["ci"][1], 1, 100), f"propagation{tag}.json")
+                fes.setdefault(sk, []).append(100 * fe["difference"])
+    for sk, v in fes.items():
+        add(f"win.{sk}.fe_min", f1(min(v)), "propagation_*.json")
+        add(f"win.{sk}.fe_max", f1(max(v)), "propagation_*.json")
     for dname, dk in (("Hemorrhage", "hem"), ("Hypertensive disorders", "htn"),
                       ("Substance use disorder", "sud"), ("Mental health conditions", "mh"),
                       ("Cardiomyopathy", "cm"), ("Cardiovascular conditions", "cv"),
@@ -416,7 +496,9 @@ def main() -> None:
               "requested_frequency": "reqfreq",
               "requested_frequency_effective_norm": "reqfreqeff",
               "requested_excluding_home_visiting": "reqnohv",
-              "burden_aligned_unconstrained": "burdenunc"}
+              "burden_aligned_unconstrained": "burdenunc",
+              "requested_with_bundle_components": "reqcomp",
+              "requested_with_bundle_components_incremental_current_practice": "reqcompcur"}
     for k, r in pcj["portfolios"].items():
         if k not in pnames:
             continue
@@ -429,9 +511,19 @@ def main() -> None:
         add(f"pf.{n}.net_m", f'{r["net_cost"]/1e6:,.0f}', "portfolio_cea.json")
         cpq = r["cost_per_qaly"]
         add(f"pf.{n}.cpq", f"{cpq:,.0f}" if cpq < 1e12 else "not estimable", "portfolio_cea.json")
+        br = r.get("by_race")
+        if br:
+            add(f"pf.{n}.black_per100k", f"{br['black_per_100k']:.1f}", "portfolio_cea.json")
+            add(f"pf.{n}.other_per100k", f"{br['other_per_100k']:.1f}", "portfolio_cea.json")
+            if not any(r_[0] == "pf.baseline.black_prmr" for r_ in rows):
+                add("pf.baseline.black_prmr", f"{br['baseline_black_prmr']:.1f}", "portfolio_cea.json")
+                add("pf.baseline.other_prmr", f"{br['baseline_other_prmr']:.1f}", "portfolio_cea.json")
         cpd = r["cost_per_death_averted"]
         add(f"pf.{n}.cpd_m", f"{cpd/1e6:,.1f}" if cpd < 1e15 else "not estimable", "portfolio_cea.json")
     obs, ev = pcj["portfolios"]["observed"], pcj["portfolios"]["evidence_weighted"]
+    oc_, ec_ = pcj["portfolios"].get("observed_incremental_current_practice"), pcj["portfolios"].get("evidence_weighted_incremental_current_practice")
+    if oc_ and ec_:
+        add("pf.evcur_cost_share", f1(100 * ec_["program_cost"] / oc_["program_cost"]), "portfolio_cea.json")
     add("pf.ratio", f'{ev["deaths_averted"]/obs["deaths_averted"]:.1f}', "portfolio_cea.json")
     add("pf.ev_cost_share", f1(100 * ev["program_cost"] / obs["program_cost"]), "portfolio_cea.json")
     eq = pcj.get("equivalent_budget") or {}

@@ -23,7 +23,7 @@ CONTEXT_WINDOW characters of a maternal or perinatal term.
 Output: results/accountability_chain.json and a per-state long table.
 """
 from __future__ import annotations
-import bisect, csv, json, re, sys, collections
+import bisect, csv, json, os, re, sys, collections
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -32,7 +32,7 @@ from taxonomy_shim import map_cause, map_recommendation, DOMAINS
 MMRC = Path.home() / "waymark-local/notebooks/dark-health-data/data/processed/mmrc"
 RFP = Path.home() / "waymark-local/notebooks/rfp_analysis/processed_text"
 OUT = Path(__file__).resolve().parent.parent / "results"
-CONTEXT_WINDOW = 300
+CONTEXT_WINDOW = int(os.environ.get("MMRC_CTX_WINDOW", 300))  # window-width sensitivity via env
 
 STATE_ABBR = {
     "Arizona": "AZ", "California": "CA", "Colorado": "CO", "Delaware": "DE", "Florida": "FL",

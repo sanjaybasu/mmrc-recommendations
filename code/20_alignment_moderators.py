@@ -59,6 +59,11 @@ def main() -> None:
         d = cmap.get(f["leading_cause"].strip())
         if d and d != "Not a cause of death":
             burden[f["state"]][d] += 1
+    import re, importlib.util, sys
+    spec = importlib.util.spec_from_file_location("chain", Path(__file__).parent / "04_accountability_chain.py")
+    chain = importlib.util.module_from_spec(spec); sys.modules["chain"] = chain; spec.loader.exec_module(chain)
+    term = {d: re.compile(p_, re.I) for d, p_ in chain.CAUSE_TERMS.items()}
+    named = collections.defaultdict(set)   # causes named in the text of cross-cutting recommendations
     att = collections.defaultdict(collections.Counter)
     n_recs = collections.Counter()
     xclin = collections.defaultdict(int)   # cross-cutting clinical protocol recommendations
@@ -68,8 +73,12 @@ def main() -> None:
         n_recs[r["state"]] += 1
         if d and d != "Cross-cutting":
             att[r["state"]][d] += 1
-        elif lab.get("policy_lever") == "Clinical protocol or bundle":
-            xclin[r["state"]] += 1
+        else:
+            if lab.get("policy_lever") == "Clinical protocol or bundle":
+                xclin[r["state"]] += 1
+            for dd, pat in term.items():
+                if pat.search(r.get("recommendation") or ""):
+                    named[r["state"]].add(dd)
 
     # pregnancy-related mortality ratio per state: median over overall rows,
     # the same rule the model calibration uses
@@ -111,6 +120,9 @@ def main() -> None:
                          # recommendation counts toward every obstetric and
                          # cardiovascular cause the state documented
                          "silent_sens": int(att[s][d] == 0 and not (obcv and xclin[s] > 0)),
+                         # intermediate rule: credit a cross-cutting recommendation to a
+                         # cause only when its text names that condition
+                         "silent_mid": int(att[s][d] == 0 and d not in named[s]),
                          "log_recs": float(np.log(n_recs[s])) if n_recs[s] else np.nan,
                          "n_causes": len(b),
                          "few_specific": int(ta < 5),
@@ -156,7 +168,8 @@ def main() -> None:
     fam_b, fam_g = sm.families.Binomial(), sm.families.Gaussian()
     fit("silence_by_group", "silent ~ group", df, fam_b)
     fit("silence_recs_causes", "silent ~ group + log_recs + n_causes", df, fam_b)
-    fit("silence_sensitivity_crosscutting", "silent_sens ~ group", df, fam_b)
+    fit("silence_sensitivity_crosscutting", "silent_sens ~ group + log_recs + n_causes", df, fam_b)
+    fit("silence_intermediate_rule", "silent_mid ~ group + log_recs + n_causes", df, fam_b)
     fit("silence_pages_recs", "silent ~ group + log_pages + log_recs + n_causes", df, fam_b)
     fit("silence_pages", "silent ~ group + log_pages", df, fam_b)
     fit("concordance_pages", "log_concordance ~ group + log_pages", df, fam_g)
@@ -170,6 +183,10 @@ def main() -> None:
     out["silence_sens_by_group_raw"] = {
         g: {"pairs": int(len(x)), "silent": int(x["silent_sens"].sum()),
             "pct": round(100 * x["silent_sens"].mean(), 1)}
+        for g, x in df.groupby("group", observed=True)}
+    out["silence_mid_by_group_raw"] = {
+        g: {"pairs": int(len(x)), "silent": int(x["silent_mid"].sum()),
+            "pct": round(100 * x["silent_mid"].mean(), 1)}
         for g, x in df.groupby("group", observed=True)}
     out["pairs_with_fewer_than_5_specific_recs"] = int(df["few_specific"].sum())
     out["states_with_fewer_than_5_specific_recs"] = int(df.loc[df["few_specific"] == 1, "state"].nunique())

@@ -32,13 +32,14 @@ interval on the difference.
 Output: results/propagation.json, results/contract_doc_scan.csv
 """
 from __future__ import annotations
-import collections, csv, importlib.util, json, re, sys
+import collections, csv, importlib.util, json, os, re, sys
 from pathlib import Path
 
 import numpy as np
 
 HERE = Path(__file__).resolve().parent
 RES = HERE.parent / "results"
+TAG = os.environ.get("MMRC_WINDOW_TAG", "")  # e.g. "_ctx150"; empty = primary windows
 SRC = Path.home() / "waymark-local/notebooks/dark-health-data/data/processed/mmrc"
 SEED, BOOT = 20260924, 2000
 
@@ -78,7 +79,7 @@ def doc_year(name: str) -> int | None:
 
 def scan_contracts() -> list[dict]:
     """Per-document, per-domain presence and same-provision withhold, cached."""
-    out = RES / "contract_doc_scan.csv"
+    out = RES / f"contract_doc_scan{TAG}.csv"
     if out.exists():
         return list(csv.DictReader(open(out)))
     compiled = {d: re.compile(p, re.I) for d, p in chain.CAUSE_TERMS.items()}
@@ -349,7 +350,12 @@ def main() -> None:
             m = smf.ols("present ~ recommended + C(state) + C(domain)", data=df).fit(
                 cov_type="cluster", cov_kwds={"groups": pd.factorize(df["state"])[0]})
             ci = m.conf_int().loc["recommended"]
-            return {"difference": float(m.params["recommended"]),
+            varying = df.groupby("state")["recommended"].nunique()
+            ident = varying[varying > 1].index
+            return {"mdd": float(2.80 * (ci[1] - ci[0]) / 3.92),
+                    "identifying_states": int(len(ident)),
+                    "identifying_pairs": int(df["state"].isin(ident).sum()),
+                    "difference": float(m.params["recommended"]),
                     "ci": [float(ci[0]), float(ci[1])], "p": float(m.pvalues["recommended"]),
                     "n_pairs": int(len(df)), "n_states": int(df["state"].nunique())}
         except Exception as e:
@@ -412,7 +418,7 @@ def main() -> None:
                "channels": results, "moderators_contract_postdating": mods,
                "channel_files_present": {"pqc_aim": pqc_aim is not None,
                                          "legislation_consortium": legis is not None}},
-              open(RES / "propagation.json", "w"), indent=1)
+              open(RES / f"propagation{TAG}.json", "w"), indent=1)
 
     print(f"documented state-cause pairs: {len(pairs)} across "
           f"{len({p['state'] for p in pairs})} states")

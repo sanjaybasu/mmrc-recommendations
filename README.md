@@ -23,12 +23,13 @@ Run from the project root in order. Scripts that call language models read `ANTH
 | Step | Script | Purpose |
 |---|---|---|
 | Classification | `07_llm_classify.py`, `21_intervention_map.py`, `07b_llm_causes.py`, `25_dual_model_classify.py` | Classify recommendations (cause, policy lever, actor, coverage period, requested intervention) and committee cause labels with two models from different developers |
-| Adjudication and validation | `26_adopt_dual_labels.py`, `27_adjudication_sheet.py`, `28_apply_adjudication.py`, `24_validation_packet.py`, `30_score_validation.py` | Build the physician adjudication and blinded coding workbooks, apply adjudicated labels, score agreement with blinded physician coding, finalize evidence grades |
+| Adjudication and validation | `26_adopt_dual_labels.py`, `27_adjudication_sheet.py`, `28_apply_adjudication.py`, `24_validation_packet.py`, `30_score_validation.py`, `32_test_retest.py`, `33_validation_stats.py`, `34_second_coder_packet.py`, `37_supplementary_packet.py` | Build the physician adjudication and blinded coding workbooks, apply adjudicated labels, score agreement with blinded physician coding, finalize evidence grades |
+| Design-based correction | `36_dsl_inference.py` | Design-based supervised learning (prediction-powered difference) estimate of the share naming an intervention with evidence of benefit, with inclusion probabilities from the sampling design |
 | Evidence grading | `29_evidence_grading.py` | Independent grading by the investigators and two models, with a physician adjudication sheet |
 | Alignment | `08_classification_analysis.py`, `18_committee_composition.py`, `20_alignment_moderators.py` | Silence, concordance, and their correlates |
-| Downstream vehicles | `04_accountability_chain.py`, `06_withhold_proximity.py`, `19_propagation.py` | Contract, legislation, quality collaborative, and task force linkage, with state and cause fixed effects |
-| Model | `09_build_params.py`, `10_model_inputs.py`, `11_microsim.py`, `12_interventions.py`, `13_portfolio_cea.py`, `14_uncertainty.py` | Microsimulation, portfolios, probabilistic and structural sensitivity analyses |
-| Exhibits and manuscript | `15_exhibits.py`, `16_tables.py`, `17_canonical.py`, `23_exhibits_md.py`, `22_render.py` | Figures and tables from result files; every number in the manuscript is rendered from `canonical_numbers.json` |
+| State policy | `04_accountability_chain.py`, `06_withhold_proximity.py`, `19_propagation.py`, `35_contract_validation_packet.py`, `38_score_contract_validation.py` | Contract, legislation, quality collaborative, and task force linkage, with state and cause fixed effects; accuracy of the contract text rules; window widths set with `MMRC_CTX_WINDOW`, `MMRC_WH_WINDOW`, `MMRC_WINDOW_TAG` |
+| Model | `09_build_params.py`, `10_model_inputs.py`, `11_microsim.py`, `12_interventions.py`, `13_portfolio_cea.py`, `14_uncertainty.py`, `31_oneway.py` | Microsimulation, portfolios, probabilistic, one-way, and structural sensitivity analyses |
+| Exhibits and manuscript | `15_exhibits.py`, `16_tables.py`, `17_canonical.py`, `23_exhibits_md.py`, `22_render.py`, `39_redline.py` | Figures and tables from result files; every number in the manuscript is rendered from `canonical_numbers.json`; tracked-changes copy against an earlier render |
 
 Scripts `00`-`06` are the preliminary rule-based analyses reported in the study protocol; the manuscript uses the language-model classification.
 

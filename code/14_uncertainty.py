@@ -127,7 +127,7 @@ def perturb_interventions(model, rng) -> None:
     """Effects on the log scale, unit costs from a gamma matched to the sourced or
     assumed range, maximum reach from a beta matched to its range."""
     for i in model.ints.values():
-        i.rr = float(np.clip(lognormal_draw(rng, i.rr, i.rr_lo, i.rr_hi), 0.05, 1.0))
+        i.rr = float(np.clip(lognormal_draw(rng, i.rr, i.rr_lo, i.rr_hi), 0.05, 2.0))
         i.unit_cost = gamma_draw(rng, i.unit_cost, i.cost_lo, i.cost_hi)
         if 0 < i.max_reach < 1:
             i.max_reach = float(np.clip(beta_draw(rng, i.max_reach, i.reach_lo, i.reach_hi, 1.0),
@@ -218,7 +218,9 @@ def main() -> None:
     # parameter draws. Re-optimizing the evidence-weighted portfolio inside each
     # draw would let it see each draw's true parameters, which measures an
     # oracle rather than the uncertainty facing a decision made now.
-    m0 = pc.Model(P, N_COHORT, seed=SEED)
+    import os
+    CUR = CURRENT_PRACTICE if os.environ.get("MMRC_CURRENT_PRACTICE") == "1" else None
+    m0 = pc.Model(P, N_COHORT, seed=SEED, current=CUR)
     fixed = {"obs": m0.requested_full(ISHARES)}
     b0 = m0.outcomes(fixed["obs"])["program_cost"]
     fixed["ev"] = m0.greedy(b0, steps=120)
@@ -228,6 +230,7 @@ def main() -> None:
     fixed["wl"] = m0.within_lever(lb0, steps=40)
     fixed["ba"] = m0.burden_aligned_at_budget(b0)
     fixed["freq"] = m0.requested_frequency(ISHARES)
+    fixed["comp"] = m0.requested_with_components(ISHARES)
     rng = np.random.default_rng(SEED)
     rows = []
     for d in range(N_PSA):
@@ -235,7 +238,7 @@ def main() -> None:
         try:
             perturb_structure(rng)
             try:
-                m = pc.Model(Q, N_COHORT, seed=SEED + 1 + d)
+                m = pc.Model(Q, N_COHORT, seed=SEED + 1 + d, current=CUR)
             finally:
                 restore_structure()
             perturb_interventions(m, rng)
@@ -276,11 +279,17 @@ def main() -> None:
     psa["n_draws"] = len(rows)
     psa["design"] = "allocations fixed at base case, evaluated across draws"
     print(f"\nprobabilistic analysis over {len(rows)} draws (fixed allocations)")
-    for t in ("obs", "ev", "wl", "ba", "freq"):
+    for t in ("obs", "ev", "wl", "ba", "freq", "comp"):
         q = psa[f"{t}_deaths"]
         print(f"  {t:5s} deaths averted {q['median']:7.1f} ({q['ci'][0]:.1f} to {q['ci'][1]:.1f})")
     print(f"  P(evidence-weighted averts more) {psa['prob_evidence_weighted_averts_more']:.3f}; "
           f"P(>=2x) {psa['prob_evidence_weighted_averts_at_least_2x']:.3f}")
+
+    if CUR is not None:
+        json.dump({"n_psa_draws": N_PSA, "n_cohort": N_COHORT, "seed": SEED, "current_practice": CUR,
+                   "psa": psa, "psa_draws": rows}, open(RES / "uncertainty_current.json", "w"), indent=1)
+        print("wrote uncertainty_current.json")
+        return
 
     # ---- one-way sensitivity -------------------------------------------------
     one_way = []

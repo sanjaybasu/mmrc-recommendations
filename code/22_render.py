@@ -54,7 +54,7 @@ def cite(text: str, refs: dict, prefix: str = "") -> tuple[str, list[str]]:
         for k in keys:
             if k not in order:
                 order.append(k)
-        return f"<sup>{prefix}{compress([order.index(k) + 1 for k in keys])}</sup>"
+        return f"^{prefix}{compress([order.index(k) + 1 for k in keys])}^"
 
     body = CITE.sub(num, text)
     lines = []
@@ -72,7 +72,7 @@ def cite(text: str, refs: dict, prefix: str = "") -> tuple[str, list[str]]:
 def words(md: str, start: str, end: str) -> int:
     a, b = md.find(start), md.find(end)
     seg = md[a:b]
-    seg = re.sub(r"<sup>.*?</sup>", "", seg)
+    seg = re.sub(r"<sup>.*?</sup>|\^[^^\s]+\^", "", seg)
     seg = "\n".join(l for l in seg.splitlines() if not l.startswith("#"))
     return len(re.findall(r"[A-Za-z0-9][A-Za-z0-9'\-.,%]*", seg))
 
@@ -135,6 +135,8 @@ def main() -> None:
         raw = sup.read_text()
         if (MAN / "etables.md").exists():
             raw = raw.replace("<!-- ETABLES -->", (MAN / "etables.md").read_text())
+        if (MAN / "etables_post.md").exists():
+            raw = raw.replace("<!-- ETABLES_POST -->", (MAN / "etables_post.md").read_text())
         raw = raw.replace("<!-- PROMPTS -->", prompts())
         s = fill(raw, canon)
         s, elines = cite(s, refs, prefix="e")
